@@ -19,6 +19,7 @@ class Account
     validate!
     validate_positive! @total - @incoming_sum
     @total -= @incoming_sum
+    sum
   end
 
   def put_money(sum)
