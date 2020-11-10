@@ -8,7 +8,7 @@ module Validation
 
     attr_accessor :checks
 
-    def validate(attribute, validation_type, param)
+    def validate(attribute, validation_type, param = {})
 
       validation ||= {
           presence: method(:validate_presence),

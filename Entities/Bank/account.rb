@@ -2,7 +2,7 @@
 
 require_relative '../../Utils/validation'
 
-class Bank
+class Account
   include Validation
 
   attr_reader :total
