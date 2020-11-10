@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require_relative 'Cards/Suits/hearts'
 require_relative 'Cards/Suits/clubs'
 require_relative 'Cards/Suits/diamonds'
@@ -18,7 +19,6 @@ require_relative 'Cards/king'
 require_relative 'Cards/ace'
 
 class Deck
-
   def initialize(count_of_deck = 1)
     @cards = []
     build_deck(count_of_deck)
