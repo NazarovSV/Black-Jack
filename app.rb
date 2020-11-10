@@ -2,4 +2,4 @@
 
 require_relative 'Service/game'
 
-Game.new.start
+Game.new.launch

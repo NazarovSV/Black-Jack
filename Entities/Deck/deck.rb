@@ -28,8 +28,12 @@ class Deck
     @cards = @cards.shuffle
   end
 
-  def get_card
+  def take_card
     @cards.shift
+  end
+
+  def card_count
+    cards.count
   end
 
   private
@@ -39,21 +43,10 @@ class Deck
   def build_deck(count_of_deck)
     suits = [Hearts.new, Diamonds.new, Clubs.new, Spades.new]
 
+    cards = [Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King, Ace]
     count_of_deck.times do
       suits.each do |suit|
-        @cards.push Two.new suit
-        @cards.push Three.new suit
-        @cards.push Four.new suit
-        @cards.push Five.new suit
-        @cards.push Six.new suit
-        @cards.push Seven.new suit
-        @cards.push Eight.new suit
-        @cards.push Nine.new suit
-        @cards.push Ten.new suit
-        @cards.push Jack.new suit
-        @cards.push Queen.new suit
-        @cards.push King.new suit
-        @cards.push Ace.new suit
+        cards.each { |type| @cards.push type.new suit }
       end
     end
   end

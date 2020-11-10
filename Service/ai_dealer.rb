@@ -1,13 +1,22 @@
 # frozen_string_literal: true
 
 class AIDealer
-  def initialize(cards, deck)
+  def initialize(name, cards, deck)
+    @name = name
     @cards = cards
     @deck = deck
   end
 
   def make_a_move
-    @cards.push @deck.get_card if count_total < 17
+    refused = false
+    if count_total < 17
+      @cards.push @deck.take_card
+      puts "#{@name} берёт карту"
+    else
+      puts "#{@name} пропускает ход"
+      refused = true
+    end
+    refused
   end
 
   private
