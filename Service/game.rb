@@ -143,7 +143,7 @@ class Game
     @game_variants[key].call
   rescue StandardError => e
     @ui.warning e.message
-    puts e.backtrace
+    @ui.warning e.backtrace
     retry
   end
 
@@ -233,7 +233,7 @@ class Game
     @deck = Deck.new count
     @deck.shuffle
   rescue StandardError => e
-    puts e.message
+    @ui.warning e.message
     retry
   end
 
