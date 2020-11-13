@@ -7,16 +7,13 @@ class AIDealer
     @deck = deck
   end
 
-  def make_a_move
-    refused = false
+  def take_card?
     if count_total < 17
       @cards.push @deck.take_card
-      puts "#{@name} берёт карту"
+      true
     else
-      puts "#{@name} пропускает ход"
-      refused = true
+      false
     end
-    refused
   end
 
   private

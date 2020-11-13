@@ -6,38 +6,37 @@ require_relative '../Entities/Bank/account'
 require_relative '../Entities/Deck/deck'
 require_relative '../Entities/Deck/Cards/ace'
 require_relative 'ai_dealer'
+require_relative 'bank'
 
 class Game
   include Validation
 
-  def initialize
-    @bank = 0
-    @game_variants = {
-      'Пропустить' => method(:skip),
-      'Добавить карту' => method(:add_card_for_user),
-      'Открыть карты' => method(:open_cards)
-    }
+  def initialize(ui)
+    @ui = ui
     @previous_user_refused = false
   end
 
   def launch
-    greeting
-    initialize_game_settings
+    @ui.greeting
+    initialize_game_settings @ui.player_name
     start
   end
 
   private
 
+  attr_accessor :ui, :deck, :user, :dealer, :bank, :winner_found
+
   def start
     loop do
       if deck.card_count < 6
-        puts 'Карт в колоде меньше 6, перезапустите игру!'
+        @ui.warning 'Карт в колоде меньше 6, перезапустите игру!'
         break
       end
       reset_state
       deal_cards
       place_bets
-      print_cards
+
+      show_players_cards hide_dealer_cards: true
 
       if twenty_one? @user
         summarize
@@ -45,14 +44,12 @@ class Game
         players_make_moves
       end
 
-      break if exit?
+      break unless continue?
     end
   end
 
   def players_make_moves
     loop do
-      break if @winner_found
-
       if player_has_three_cards?(@user)
         summarize
         break
@@ -60,14 +57,17 @@ class Game
         user_move
         break if @winner_found
 
-        if twenty_one?(@user) || more_than_twenty_one?(@user) || player_has_three_cards?(@dealer)
+        if twenty_one?(@user) || more_than_twenty_one?(@user) || player_has_three_cards?(@dealer) || players_refused?
           summarize
           break
         end
-
-        dealer_move
+        @dealer_refused = !dealer_take_card?
       end
     end
+  end
+
+  def players_refused?
+    @dealer_refused && @player_refused
   end
 
   def player_has_three_cards?(user)
@@ -81,43 +81,39 @@ class Game
   end
 
   def skip
-    summarize if @previous_user_refused
+    @player_refused = true
   end
 
   def add_card_for_user
     card = @deck.take_card
     @user.cards.push card
-    puts "Добавлена карта #{card.name} #{card.suit.image}\n"
-  end
-
-  def open_cards
-    print_user_game_info @dealer
-    print_user_game_info @user
-    summarize
-  end
-
-  def print_users_banks_state
-    [@user, @dealer].each { |user| puts "На текущий момент у пользователя #{user.name} денег #{user.account.total}\n" }
+    @ui.show_progress "Добавлена карта #{card.name} #{card.suit.image}\n"
   end
 
   def summarize
-    puts 'Итого:'
-    print_user_game_info @dealer
-    print_user_game_info @user
-
-    print_winner(winner_player)
-    deposit_money(winner_player)
-    @bank = 0
-    print_users_banks_state
     @winner_found = true
+    winner = winner_player
+    show_totals(winner)
+    reward_the_winner(winner)
+    show_account_info
   end
 
-  def print_winner(winner)
-    if winner.nil?
-      puts 'Ничья. Деньги возвращены на счета!\n'
-    else
-      puts "Победил #{winner.name}!\n"
-    end
+  def reward_the_winner(winner)
+    @bank.deposit_money(winner)
+  end
+
+  def show_totals(winner)
+    players_info = prepare_players_info
+    winner_name = nil
+    winner_name = winner.name unless winner.nil?
+    totals = { players: players_info,
+               winner: winner_name }
+
+    @ui.show_totals totals
+  end
+
+  def show_account_info
+    @ui.show_account_info @bank.accounts_info
   end
 
   def winner_player
@@ -134,58 +130,60 @@ class Game
     count_total(first_player) > count_total(second_player)
   end
 
-  def deposit_money(winner)
-    if winner.nil?
-      @user.account.put_money(@bank / 2)
-      @dealer.account.put_money(@bank / 2)
-    else
-      winner.account.put_money @bank
-    end
-  end
-
   def user_move
-    print_variants
+    @game_variants ||= {
+      'Пропустить' => method(:skip),
+      'Добавить карту' => method(:add_card_for_user),
+      'Открыть карты' => method(:summarize)
+    }
+    id = choose_option
+    raise 'ошибка выбора варианта' unless id >= 0 && id < @game_variants.count
 
-    choice = gets.chomp.to_i
-    raise 'ошибка выбора варианта' unless choice.positive? && choice <= @game_variants.length
-
-    key = @game_variants.keys[choice - 1]
-    @game_variants[key]&.call
+    key = @game_variants.keys[id]
+    @game_variants[key].call
   rescue StandardError => e
-    puts e.message
+    @ui.warning e.message
+    puts e.backtrace
     retry
   end
 
-  def dealer_move
+  def dealer_take_card?
     dealer ||= AIDealer.new @dealer.name, @dealer.cards, @deck
-    refused = dealer.make_a_move
-    if @previous_user_refused
-      summarize
-    else
-      @previous_user_refused = refused
+    take = dealer.take_card?
+    @ui.show_progress "#{@dealer.name} берет карту"
+    take
+  end
+
+  def choose_option
+    options = {}
+    @game_variants.each_with_index { |(key, _), index| options[index + 1] = key }
+    @ui.choose_option(options) - 1
+  end
+
+  def continue?
+    @ui.continue?
+  end
+
+  def show_players_cards(hide_dealer_cards: false)
+    info = prepare_players_info(hide_dealer_cards: hide_dealer_cards)
+    @ui.show_players_cards info
+  end
+
+  def prepare_players_info(hide_dealer_cards: false)
+    info = {}
+    info[@dealer.name] = player_card_info @dealer, hide_cards: hide_dealer_cards
+    info[@user.name] = player_card_info @user
+    info
+  end
+
+  def player_card_info(user, hide_cards: false)
+    cards = []
+    @dealer.cards.each do |card|
+      cards.push(hide_cards ? '*' : "#{card.name} #{card.suit.image}")
     end
-  end
-
-  def print_variants
-    @game_variants.each_with_index do |(variant_name, _), index|
-      puts "#{index + 1} - #{variant_name}"
-    end
-  end
-
-  def exit?
-    puts 'Продолжаем игру?(y/n)'
-    answer = gets.chomp
-    raise 'Введите правильный вариант ответа' unless %w[y n].include? answer
-
-    answer == 'n'
-  rescue StandardError => e
-    puts e.message
-    retry
-  end
-
-  def print_cards
-    puts "Карты дилера: #{hidden_dealer_cards}\n\n"
-    print_user_game_info @user
+    total = hide_cards ? '*' : count_total(user)
+    { cards: cards,
+      total: total }
   end
 
   def deal_cards
@@ -195,9 +193,7 @@ class Game
   end
 
   def place_bets
-    [@user, @dealer].each do |user|
-      @bank += user.account.withdraw_money 10
-    end
+    @bank.place_bet 10
   end
 
   def twenty_one?(user)
@@ -212,17 +208,6 @@ class Game
     count_total(user) <= 21
   end
 
-  def hidden_dealer_cards
-    ['*'].cycle(dealer.cards.count).to_a.join(' ')
-  end
-
-  def print_user_game_info(user)
-    puts "Карты пользователя #{user.name}:"
-    user.cards.each { |card| puts "#{card.name} #{card.suit.image}" }
-    total = count_total(user)
-    puts "Итого: #{total}\n\n"
-  end
-
   def count_total(user)
     total = 0
     user.cards.each do |card|
@@ -235,36 +220,25 @@ class Game
     total
   end
 
-  def initialize_game_settings
-    self.user_name = gets.chomp
-    validate!
-    create_players
+  def initialize_game_settings(user_name)
+    create_players user_name
+    @bank = Bank.new({ @user => @user.account, @dealer => @dealer.account })
     create_deck
   end
 
-  attr_accessor :deck, :user, :dealer, :bank, :game_variants, :previous_user_refused, :winner_found
-
-  validate :user_name, :presence
-
   def create_deck
-    puts 'Сколько колод участвует в игре?'
-    puts 'Введите число:'
-    deck_count = gets.chomp.to_i
-    raise 'должно участвовать одна или больше колод' if deck_count.nil? || !deck_count.positive?
+    count = @ui.deck_counts
+    raise 'должно участвовать одна или больше колод' if count.nil? || !count.positive?
 
-    @deck = Deck.new deck_count
+    @deck = Deck.new count
     @deck.shuffle
   rescue StandardError => e
     puts e.message
     retry
   end
 
-  def create_players
-    @user = User.new(@user_name, Account.new(100))
+  def create_players(user_name)
+    @user = User.new(user_name, Account.new(100))
     @dealer = User.new('Dealer', Account.new(100))
-  end
-
-  def greeting
-    puts 'Добрый день! Введите, пожалуйста ваше имя'
   end
 end
